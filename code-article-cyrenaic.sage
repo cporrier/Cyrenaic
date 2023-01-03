@@ -1,3 +1,5 @@
+# tested with SageMath version 8.6, Release Date: 2019-01-15
+
 ###############
 # TERMINOLOGY #
 ###############
@@ -30,6 +32,7 @@ def generators_to_grid(E):
 # DESCRIPTION: compute the dual tiling of a multigrid
 # INPUT: a multigrid G; an n-dim. shift vector S for the grid; an integer k which bounds the number of lines in each grid
 # OUTPUT: the strongly planar tiling of slope E shifted by S
+# TODO : ne garder que les tuiles qui ont 4 voisines ?
 def dual(G,S,k):
     tiles=[]
     (n,d)=G.dimensions()
@@ -59,6 +62,18 @@ def valid_projection(A,E):
 # INPUT: a slope E
 # OUTPUT: a projection
 orthogonal_projection=lambda E: E.gram_schmidt()[0]
+
+# DESCRIPTION: compute the projection which maps the e_i's on the roots of the unity
+# only for n->2 tilings
+def rectified_projection(E):
+    (d,n)=E.dimensions()
+    if d<>2:
+        raise ValueError
+    M=matrix(AA,[[cos(k*pi/n) for k in range(2*n)],[sin(k*pi/n) for k in range(2*n)]])
+    for p in Combinations(range(2*n),n): # Arrangements nécessaire ?
+        A=M.matrix_from_columns(p)
+        if valid_projection(A,E):
+            return A
 
 ##############
 # Subperiods #
@@ -115,7 +130,7 @@ def lifted_subperiods(E):
 internal_projection=lambda E: matrix(E.right_kernel().basis()).gram_schmidt()[0]
 
 # DESCRIPTION: compute the region in the window associated with a pattern
-# INPUT: window W; internal projection ip; a pattern P
+# INPUT: window W; internal projection ip; the list of vertices of a pattern
 # OUTPUT: a polytope
 region=lambda W,ip,P: Polyhedron(ieqs=flatten([W.translation(-ip*vector(v)).inequalities_list() for v in P],max_level=1))
 
@@ -169,7 +184,7 @@ def vertices_to_tiles(V):
                 T.append((t,v))
     return T
 
-# DESCRIPTION: compute the r-atlas a strongly planar tiling
+# DESCRIPTION: compute the r-atlas a strongly planar tiling (d=2)
 # INPUT: a slope E embedded in AA; an integer r
 # OUTPUT: the r-atlas of the strongly planar tiling of slope E
 def atlas(E,r,draw_in_W=false):
@@ -178,7 +193,7 @@ def atlas(E,r,draw_in_W=false):
     rp=orthogonal_projection(E)
     # window (E must have been embedded in AA)
     W=Polyhedron(vertices=[ip*vector(v) for v in cartesian_product([[0,1] for i in range(n)])])
-    # center it on (0,0)
+    # center it on (0,0) ; TO AVOID if the points are not dense in the window (e.g. Penrose)
     W=W.translation(-W.center())
     # angle-sorted (from -pi to pi) real projections of e1,...,en,-e1,...,-en
     star=sorted([(CC(complex(*(rp*e))).argument(),e) for e in identity_matrix(n).augment(-identity_matrix(n)).columns()])
@@ -231,21 +246,26 @@ def couleur(i,j,n):
 
 # DESCRIPTION: draw a n->2 tiling
 # INPUT: a tiling T; a projection A embedded in AA
-# OUTPUT: none
-def draw_tiling(T,A,name='out.svg'):
+# OUTPUT: svg file
+def draw_tiling(T,A,name='out.svg',width=1000,height=1000):
     f=open(name,'w')
-    f.write('<svg>\n')
+    f.write('<svg width="%d" height="%d">\n'%(width,height))
     n=len(T[0][1])
     for t in T:
+        visible=false
         p='<polygon points="'
         for a in [(0,0),(0,1),(1,1),(1,0)]:
             q=copy(t[1])
             q[t[0][0]]=q[t[0][0]]+a[0]
             q[t[0][1]]=q[t[0][1]]+a[1]
-            (x,y)=100*A*q
+            (x,y)=10*A*q
+            visible=visible or (abs(x)<width/2 and abs(y)<height/2)
+            x+=width/2
+            y+=height/2
             p=p+str(round(x,3))+','+str(round(y,3))+','
         p=p[0:len(p)-1]+'" fill="#'+couleur(t[0][0],t[0][1],n)+'" stroke="black"/>\n'
-        f.write(p)
+        if visible:
+            f.write(p)
     f.write('</svg>\n')
     f.close()
 
@@ -305,27 +325,30 @@ def decorated_tile(A,E,embedding,P):
         w=RIF(min(z),max(z))
         vs=[v for v in P if subn[i].dot_product(A.apply_map(embedding)*vector(v)) in w]
         lTi=set([Polyhedron(vertices=[A.apply_map(embedding)*vector(v)+shift],lines=[sub[i]]) for v in vs])
-        lTi=sorted([l.intersection(TP) for l in lTi])
+        lTi=set([l.intersection(TP) for l in lTi])
         lTi=[l for l in lTi if l.dim()>0] # remove segment reduced to a point
         segments+=(lTi)
-    return (TP,sorted(segments))
+    return (TP,set(segments))
 
 # DESCRIPTION: compute the decorated tileset
 # INPUT: good projection A, slope E, embedding in AA, an atlas patterns
 # OUTPUT: the list of projected decorated tiles derived from the patterns
 def tileset(A,E,embedding,patterns):
-    S=set()
+    S=[]
     for P in patterns:
         z=decorated_tile(A,E,embedding,P)
-        S.add(tuple([z[0],tuple([i for i in z[1]])]))
+        if z not in S:
+            S.append(z)
     return S
 
-# DESCRIPTION: draw a tileset in an SVG file
-# INPUT: tileset
-# OUTPUT: none
+# to draw a decorated tile (TP,segments)
+#g=TP.plot(fill=false)+sum(flatten([[j.plot() for j in i] for i in segments]))
+#g.show(axes=false,aspect_ratio=1,figsize=10)
+
+# ouput in svg file
 def draw_tileset(tileset,name='out.svg'):
     f=open(name,'w')
-    f.write('<svg>\n')
+    f.write('<svg>\n'%(width,height))
     for t in tileset:
         f.write('<g>\n')
         # angle sort of the vertices of the tile
@@ -345,26 +368,83 @@ def draw_tileset(tileset,name='out.svg'):
     f.write('</svg>\n')
     f.close()
 
-#########
-# tests #
-#########
+
+##################################################
+# continuous transform between valid projections #
+##################################################
+
+# INPUT: two valid projection A and B, a parameter t in [0,1]
+# OUTPUT: a valid projection continuously modified from A for t=0 to B for t=1
+def path(A,B,t):
+    GA=vector(A.minors(2))
+    GB=vector(B.minors(2))
+    GC=(1-t)*GA+t*GB # toujours grassmanniennes d'un plan !? Plücker ? apparemment oui (à vérif)
+    C=matrix([[0,GC[0],GC[1],GC[2]],[-GC[0],0,GC[3],GC[4]]])
+    return C
+
+plucker=lambda G: G[0]*G[5]==G[1]*G[4]-G[2]*G[3]
+
+# normalization to get same area tilings
+# minors of E give tile frequencies, minors of projections A/B give tiles area
+# INPUT: projections A, B ; slope E (embedded in AA)
+# OUTPUT: projection B' proportional to B such that A and B give similar area to identical patch of E
+def normalize(A,B,E):
+    a=sqrt(sum([abs(E.minors(2)[i]*A.minors(2)[i]) for i in range(binomial(n,2))]))
+    b=sqrt(sum([abs(E.minors(2)[i]*B.minors(2)[i]) for i in range(binomial(n,2))]))
+    return a/b*B
+
+#for i in range(11):
+#    draw_tiling(cyrenaic,path(C,A,AA(i/10)),name="out3%02d.svg"%(22+i))
+
+############
+# examples #
+############
 
 # cyrenaic
 K.<a>=NumberField(x^2-3)
 E=matrix([[a,0,1,1],[1,a-1,-1,1]])
+f=K.embeddings(AA)[0]
 A=good_projection(E)
+cyrenaic=dual(generators_to_grid(E.apply_map(f)),[random() for i in range(4)],10)
 
-subperiods(E)
+# atlask_cyrenaic_v2
+# tilesetk_cyrenaic_v2
+f=K.embeddings(AA)[0]
+A1=atlas(E.apply_map(f),1) #  35 patterns in    4min -> 21 decorated tiles in 26s
+A2=atlas(E.apply_map(f),2) # 176 patterns in   13min -> 30 decorated tiles in 2min 53s
+A3=atlas(E.apply_map(f),3) # 396 patterns in   56min -> 30 decorated tiles in 7min 
+A4=atlas(E.apply_map(f),4) # 624 patterns in 2h13min -> 30 decorated tiles in 15min
+A5=atlas(E.apply_map(f),5) # 992 patterns in 4h47min -> 30 decorated tiles in 45min
 
-lifted_subperiods(E)
+# sur QQ pour accélérer en espérant ne pas avoir d'erreur grâce à la densité des points ds W
+A1=atlas(E.apply_map(f).change_ring(RDF).change_ring(QQ),1) #  35 patterns in    43s 
 
-is_determined_by_subperiods(E)
 
-cyrenaic=dual(generators_to_grid(E.apply_map(K.embeddings(AA)[0])),[random() for i in range(4)],10)
+# atlask_cyrenaic.sobj : vieille version obtenue sur QQ et non pas AA (par souci rapidité)
+# n=1 : 36 motifs
+# n=2 : 180 en 2min18s
+# n=3 : 394 en 11min
+# n=4 : 686 en 35min
+# n=5 : 1052 en 3h06
+# n=6 : 1450 en 3h15
 
-draw_tiling(cyrenaic,A.apply_map(K.embeddings(AA)[0]))
 
-A1=atlas(E.apply_map(K.embeddings(AA)[0]),1) # 1min, 35 1-maps
+# Ammann Beenker
+K.<a>=NumberField(x^2-2)
+E=matrix([[a,1,0,-1],[0,1,a,1]])
 
-tileset(A,E,K.embeddings(AA)[0],A1) # 20s, 23 decorated tiles
+# golden octagonal
+K.<b>=NumberField(x^2-x-1)
+E=matrix([[-1,0,b,b],[0,1,b,1]])
 
+# penrose
+K.<b>=NumberField(x^2-x-1)
+E=matrix([[b,0,-b,-1,1],[-1,1,b,0,-b]])
+penrose=dual(generators_to_grid(E.apply_map(K.embeddings(AA)[0])),[random() for i in range(5)],10)
+draw(penrose,orthogonal_projection(E.apply_map(K.embeddings(AA)[0])),'penrose.svg')
+
+# penblue
+K.<c>=NumberField(x^2-3)
+E=matrix([[c,0,-c,-1,1],[-1,1,c,0,-c]])
+penblue=dual(generators_to_grid(E.apply_map(K.embeddings(AA)[0])),[random() for i in range(5)],10)
+draw(penblue,orthogonal_projection(E.apply_map(K.embeddings(AA)[0])),'penblue.svg')
