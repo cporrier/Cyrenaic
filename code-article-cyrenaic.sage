@@ -1,4 +1,6 @@
-# tested with SageMath version 8.6, Release Date: 2019-01-15
+# Release Date: 2019-01-15
+# last modified and tested with SageMath version 10.6.beta5, Date: 2025-02-10
+# authors: Thomas Fernique and Carole Porrier
 
 ###############
 # TERMINOLOGY #
@@ -51,7 +53,7 @@ def dual(G,S,k):
 # INPUT: a projection A; a slope E (embedded in AA)
 # OUTPUT: boolean (is the projection valid)
 def valid_projection(A,E):
-    if A.base_ring()<>AA or E.base_ring()<>AA: # both A and E must be embedded in AA
+    if A.base_ring()!=AA or E.base_ring()!=AA: # both A and E must be embedded in AA
         raise ValueError
     (d,n)=E.dimensions()
     G1=vector([sign(A.matrix_from_columns(t).det()) for t in Combinations(range(n),d)])
@@ -67,7 +69,7 @@ orthogonal_projection=lambda E: E.gram_schmidt()[0]
 # only for n->2 tilings
 def rectified_projection(E):
     (d,n)=E.dimensions()
-    if d<>2:
+    if d!=2:
         raise ValueError
     M=matrix(AA,[[cos(k*pi/n) for k in range(2*n)],[sin(k*pi/n) for k in range(2*n)]])
     for p in Combinations(range(2*n),n): # Arrangements nécessaire ?
@@ -86,7 +88,7 @@ def subperiods(E):
     (d,n)=E.dimensions()
     l=[]
     for t in Combinations(range(n),d+1):
-        G=[(-1)^t.index(i)*det(E.matrix_from_columns([j for j in t if j<>i])) for i in t]
+        G=[(-1)^t.index(i)*det(E.matrix_from_columns([j for j in t if j!=i])) for i in t]
         G=matrix(ZZ,[g.list() for g in G])
         for s in G.left_kernel().basis():
             l.append((t,s))
@@ -138,6 +140,7 @@ region=lambda W,ip,P: Polyhedron(ieqs=flatten([W.translation(-ip*vector(v)).ineq
 # INPUT: window W; angle-sorted list star of the basis vectors projected onto the slope; internal projection ip; a pattern P; the region R of P
 # OUTPUT: updated pattern P and region R
 def close(W,star,ip,P,R):
+    (d,n)=ip.dimensions()
     Q=copy(P)
     for v in P:
         for i in range(2*n):
@@ -188,6 +191,7 @@ def vertices_to_tiles(V):
 # INPUT: a slope E embedded in AA; an integer r
 # OUTPUT: the r-atlas of the strongly planar tiling of slope E
 def atlas(E,r,draw_in_W=false):
+    (d,n)=E.dimensions()
     # internal and real projections
     ip=internal_projection(E)
     rp=orthogonal_projection(E)
@@ -278,7 +282,7 @@ def draw_tiling(T,A,name='out.svg',width=1000,height=1000):
 # INPUT: a slope E (which must be characterized by its subperiods)
 # OUTPUT: a projection which is good for E
 def good_projection(E):
-    if E.dimensions()<>(2,4):
+    if E.dimensions()!=(2,4):
         raise ValueError
     sub=lifted_subperiods(E)
     # sort subperiods
@@ -301,7 +305,7 @@ def good_projection(E):
 # INPUT: good projection A, slope E, embedding in AA, pattern P
 # OUTPUT: a pair polyhedron (the tile) and list of lines (the Ammann segments)
 def decorated_tile(A,E,embedding,P):
-    if E.dimensions()<>(2,4): # only for 4->2 tilings
+    if E.dimensions()!=(2,4): # only for 4->2 tilings
         raise ValueError
     sub=lifted_subperiods(E)
     sub=[(A*i).apply_map(embedding) for i in sub]
@@ -410,14 +414,14 @@ cyrenaic=dual(generators_to_grid(E.apply_map(f)),[random() for i in range(4)],10
 # atlask_cyrenaic_v2
 # tilesetk_cyrenaic_v2
 f=K.embeddings(AA)[0]
-A1=atlas(E.apply_map(f),1) #  35 patterns in    4min -> 21 decorated tiles in 26s
-A2=atlas(E.apply_map(f),2) # 176 patterns in   13min -> 30 decorated tiles in 2min 53s
-A3=atlas(E.apply_map(f),3) # 396 patterns in   56min -> 30 decorated tiles in 7min 
-A4=atlas(E.apply_map(f),4) # 624 patterns in 2h13min -> 30 decorated tiles in 15min
-A5=atlas(E.apply_map(f),5) # 992 patterns in 4h47min -> 30 decorated tiles in 45min
+A1=atlas(E.apply_map(f),1) #  35 patterns in        10s -> 21 decorated tiles in 26s
+#A2=atlas(E.apply_map(f),2) # 176 patterns in    1min38s -> 30 decorated tiles in 2min 53s
+#A3=atlas(E.apply_map(f),3) # 396 patterns in    6min 9s -> 30 decorated tiles in 7min 
+#A4=atlas(E.apply_map(f),4) # 624 patterns in   16min36s -> 30 decorated tiles in 15min
+#A5=atlas(E.apply_map(f),5) # 992 patterns in   38min11s -> 30 decorated tiles in 45min
 
 # sur QQ pour accélérer en espérant ne pas avoir d'erreur grâce à la densité des points ds W
-A1=atlas(E.apply_map(f).change_ring(RDF).change_ring(QQ),1) #  35 patterns in    43s 
+#A1=atlas(E.apply_map(f).change_ring(RDF).change_ring(QQ),1) #  35 patterns in    43s 
 
 
 # atlask_cyrenaic.sobj : vieille version obtenue sur QQ et non pas AA (par souci rapidité)
@@ -441,10 +445,5 @@ E=matrix([[-1,0,b,b],[0,1,b,1]])
 K.<b>=NumberField(x^2-x-1)
 E=matrix([[b,0,-b,-1,1],[-1,1,b,0,-b]])
 penrose=dual(generators_to_grid(E.apply_map(K.embeddings(AA)[0])),[random() for i in range(5)],10)
-draw(penrose,orthogonal_projection(E.apply_map(K.embeddings(AA)[0])),'penrose.svg')
+draw_tiling(penrose,orthogonal_projection(E.apply_map(K.embeddings(AA)[0])),'penrose.svg')
 
-# penblue
-K.<c>=NumberField(x^2-3)
-E=matrix([[c,0,-c,-1,1],[-1,1,c,0,-c]])
-penblue=dual(generators_to_grid(E.apply_map(K.embeddings(AA)[0])),[random() for i in range(5)],10)
-draw(penblue,orthogonal_projection(E.apply_map(K.embeddings(AA)[0])),'penblue.svg')
